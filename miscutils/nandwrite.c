@@ -64,8 +64,8 @@ static void dump_bad(struct mtd_info_user *meminfo, unsigned len, int oob)
 	unsigned char buf[meminfo->writesize];
 	unsigned count;
 
-	/* round len to the next page */
-	len = (len | ~(meminfo->writesize - 1)) + 1;
+	/* round len to the next page only if len is not already on a page */
+	len = ((len - 1) | (meminfo->writesize - 1)) + 1;
 
 	memset(buf, 0xff, sizeof(buf));
 	for (count = 0; count < len; count += meminfo->writesize) {
@@ -166,6 +166,10 @@ int nandwrite_main(int argc UNUSED_PARAM, char **argv)
 				int bad_len = MIN(tmp, end_addr) - mtdoffset;
 				dump_bad(&meminfo, bad_len, opts & OPT_o);
 			}
+			/* with option skip bad block, increase the length */
+			if (IS_NANDDUMP && (opts & OPT_b)) {
+				end_addr += (tmp - blockstart);
+			}
 			mtdoffset = tmp;
 		}
 	}
@@ -182,9 +186,16 @@ int nandwrite_main(int argc UNUSED_PARAM, char **argv)
 			mtdoffset = next_good_eraseblock(fd, &meminfo, blockstart);
 			if (IS_NANDWRITE)
 				printf("Writing at 0x%08x\n", mtdoffset);
-			else if (mtdoffset > blockstart && !(opts & OPT_b)) {
-				int bad_len = MIN(mtdoffset, limit) - blockstart;
-				dump_bad(&meminfo, bad_len, opts & OPT_o);
+			else if (mtdoffset > blockstart) {
+				if (opts & OPT_b) {
+					/* omit bad block, but increase the length */
+					end_addr += (mtdoffset - blockstart);
+					limit = MIN(meminfo.size, end_addr);
+				} else {
+					/* dump bad block if asked */
+					int bad_len = MIN(mtdoffset, limit) - blockstart;
+					dump_bad(&meminfo, bad_len, opts & OPT_o);
+				}
 			}
 			if (mtdoffset >= limit)
 				break;
